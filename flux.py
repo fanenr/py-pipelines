@@ -21,7 +21,7 @@ class Filter:
             description="Priority level for the filter operations.",
         )
         api_url: str = Field(
-            default="https://api.siliconflow.cn",
+            default="https://api.siliconflow.cn/v1",
             description="Base URL for the Siliconflow API.",
         )
         api_key: str = Field(
@@ -35,8 +35,12 @@ class Filter:
             description="1024x1024, 512x1024, 768x512, 768x1024, 1024x576, 576x1024",
         )
         steps: int = Field(
-            default=50,
+            default=20,
             description="Number of inference steps to be performed. (1-100)",
+        )
+        model: str = Field(
+            default="black-forest-labs/FLUX.1-dev",
+            description="The name of the model.",
         )
 
     def __init__(self):
@@ -47,7 +51,7 @@ class Filter:
         return body
 
     async def request(self, prompt, __user__):
-        url = f"{self.valves.api_url}/v1/black-forest-labs/FLUX.1-schnell/text-to-image"
+        url = f"{self.valves.api_url}/image/generations"
 
         headers = {
             "accept": "application/json",
@@ -57,6 +61,7 @@ class Filter:
 
         payload = {
             "prompt": prompt,
+            "model": __user__["valves"].model,
             "image_size": __user__["valves"].size,
             "num_inference_steps": __user__["valves"].steps,
         }
