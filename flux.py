@@ -1,4 +1,6 @@
 import aiohttp
+import asyncio
+from typing import Optional
 from pydantic import BaseModel, Field
 
 
@@ -32,15 +34,23 @@ class Filter:
     class UserValves(BaseModel):
         size: str = Field(
             default="1024x1024",
-            description="1024x1024, 512x1024, 768x512, 768x1024, 1024x576, 576x1024",
+            description="1024x1024, 512x1024, 768x512, 768x1024, 1024x576, 576x1024.",
         )
         steps: int = Field(
             default=20,
-            description="Number of inference steps to be performed. (1-100)",
+            description="The number of inference steps to be performed (1-100).",
         )
         model: str = Field(
             default="black-forest-labs/FLUX.1-dev",
             description="The name of the model.",
+        )
+        pnum: int = Field(
+            default=1,
+            description="The number of pictures.",
+        )
+        seed: Optional[int] = Field(
+            default=None,
+            description="The seed.",
         )
 
     def __init__(self):
@@ -66,20 +76,34 @@ class Filter:
             "num_inference_steps": __user__["valves"].steps,
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers) as response:
-                response.raise_for_status()
-                ret = await response.json()
-                return ret
+        if seed := __user__["valves"].seed:
+            payload["seed"] = seed
+
+        pnum = __user__["valves"].pnum
+
+        async with aiohttp.ClientSession() as sess:
+            tasks = [sess.post(url, json=payload, headers=headers) for _ in range(pnum)]
+            res = await asyncio.gather(*tasks)
+            ret = []
+
+            for i, r in enumerate(res):
+                if (s := r.status) == 200:
+                    json = await r.json()
+                    url = json["images"][0]["url"]
+                    ret.append(f"![image{i}]({url})")
+                else:
+                    text = await r.text()
+                    ret.append(f"> The {i} request failed ({s}): {text}.")
+
+            return ret
 
     async def outlet(self, body, __user__, __event_emitter__):
         await emit(__event_emitter__, f"Generating pictures, please wait...", False)
-        prompt = body["messages"][-1]["content"]
-        res = await self.request(prompt, __user__)
+        last = body["messages"][-1]
+        res = await self.request(last["content"], __user__)
 
-        image = res["images"][0]
-        mdout = f"![image]({image['url']})"
-        body["messages"][-1]["content"] += f"\n\n{mdout}"
+        for r in res:
+            last["content"] += f"\n\n{r}"
 
         await emit(
             __event_emitter__, f"Generated successfully, click to preview!", True
